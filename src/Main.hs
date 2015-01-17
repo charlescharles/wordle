@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 
 import           Control.Applicative        (Applicative, (<$>), (<*>))
-import           Control.Exception          as E
+import           Control.Exception          (SomeException(..), try)
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Error.Class  (MonadError, catchError, throwError)
@@ -12,19 +12,13 @@ import           Control.Monad.Reader       (MonadReader, ReaderT, asks,
                                              runReaderT)
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Either (EitherT (..), runEitherT)
-import           Control.Monad.Trans.Maybe  (MaybeT, runMaybeT)
 import           Data.Aeson
-import           Data.Aeson.Lens
-import           Data.Attoparsec.Number
-import           Data.Bifunctor             (first)
-import qualified Data.ByteString.Lazy       as B
-import qualified Data.ByteString.Lazy.Char8 as C
+import           Data.ByteString.Lazy.Char8 (ByteString)
 import           Data.Char                  (toLower, toUpper)
 import           Data.List                  (intercalate)
-import qualified Data.Map                   as M
-import           Data.Maybe                 (fromJust, maybe)
+import           Data.Maybe                 (maybe)
 import           Data.Maybe                 (listToMaybe)
-import qualified Data.Text                  as T
+import           Data.Text                  (pack)
 import           Network.Wreq
 import           System.Environment         (getArgs, getEnv)
 
@@ -66,6 +60,16 @@ data WordsRequest = WordsRequest { requestType :: RequestType
 
 type WordsEnv = EitherT WordsError IO
 
+app :: WordsEnv String
+app = do
+  cfg <- getConfig
+  req <- parseRequest
+  EitherT $ runWordsApp (handleRequest req) cfg
+
+main :: IO ()
+main = (runEitherT safe) >>= displayResults where
+  safe = app `catchError` errorHandler
+
 runWordsApp :: WordsApp a -> WordsConfig -> IO (Either WordsError a)
 runWordsApp w cfg = runReaderT (runEitherT (runW w)) cfg
 
@@ -98,16 +102,6 @@ parseRequest = do
   reqType <- parseReqString reqString
   return $ WordsRequest reqType word
 
-app :: WordsEnv String
-app = do
-  cfg <- getConfig
-  req <- parseRequest
-  EitherT $ runWordsApp (handleRequest req) cfg
-
-main :: IO ()
-main = (runEitherT safe) >>= displayResults where
-  safe = app `catchError` errorHandler
-
 displayResults :: Either WordsError String -> IO ()
 displayResults (Left e) = putStrLn $ display e
 displayResults (Right r) = putStrLn r
@@ -126,6 +120,8 @@ getSynonyms w = do
   let res = decode json :: Maybe SynonymList
   maybe (throwError WordNotFound) (return . synonyms) res
 
+-- URL utility functions
+
 type URL = String
 
 baseURL :: URL
@@ -134,19 +130,19 @@ baseURL = "http://www.wordsapi.com/words"
 buildURL :: Word -> String -> URL
 buildURL w endpoint = intercalate "/" [baseURL, w, endpoint]
 
-tryGetWith :: Options -> URL -> WordsApp (Response C.ByteString)
+tryGetWith :: Options -> URL -> WordsApp (Response ByteString)
 tryGetWith opts url = do
-  req <- liftIO $ (E.try $ getWith opts url :: IO (Either SomeException (Response C.ByteString)))
+  req <- liftIO $ (try $ getWith opts url :: IO (Either SomeException (Response ByteString)))
   case req of
     Left _ -> throwError WordNotFound
     Right res -> return res
 
-getJSON :: URL -> WordsApp C.ByteString
+getJSON :: URL -> WordsApp ByteString
 getJSON url = do
   token <- asks accessToken
-  let opts = defaults & param "accessToken" .~ [T.pack token]
+  let opts = defaults & param "accessToken" .~ [pack token]
   let handler _ = mzero
   liftM (^. responseBody) $ tryGetWith opts url
 
-getJSONEndpoint :: Word -> String -> WordsApp C.ByteString
+getJSONEndpoint :: Word -> String -> WordsApp ByteString
 getJSONEndpoint w e = getJSON (buildURL w e)
