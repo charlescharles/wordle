@@ -26,43 +26,43 @@ type Word = String
 
 newtype Synonyms = Synonyms {synonyms :: [Word]} deriving (Eq, Show)
 
-data WordleConfig = WordleConfig
+data WordsConfig = WordsConfig
                     { accessToken :: String }
 
-newtype Wordle a = Wordle
-                    { runW :: MaybeT (ReaderT WordleConfig IO) a }
+newtype Words a = Words
+                    { runW :: MaybeT (ReaderT WordsConfig IO) a }
                     deriving (Functor, Applicative, Monad,
-                              MonadReader WordleConfig, MonadIO, MonadPlus)
+                              MonadReader WordsConfig, MonadIO, MonadPlus)
 
-runWordle :: Wordle a -> WordleConfig -> IO (Maybe a)
-runWordle w cfg = runReaderT (runMaybeT (runW w)) cfg
+runWords :: Words a -> WordsConfig -> IO (Maybe a)
+runWords w cfg = runReaderT (runMaybeT (runW w)) cfg
 
 instance FromJSON Synonyms where
   parseJSON (Object v) = Synonyms <$> (v .: "synonyms")
 
-getConfig :: IO WordleConfig
-getConfig = getEnv "WORDLE_TOKEN" >>= return . WordleConfig
+getConfig :: IO WordsConfig
+getConfig = getEnv "Words_TOKEN" >>= return . WordsConfig
 
 main :: IO ()
 main = do
   cfg <- getConfig
   args <- getArgs
   if valid args
-    then handleWordleReq args cfg
+    then handleWordsReq args cfg
     else putStrLn "Invalid request"
 
 valid :: [String] -> Bool
 valid = (==2) . length
 
-handleWordleReq :: [String] -> WordleConfig -> IO ()
-handleWordleReq (t:w:_) cfg = do
+handleWordsReq :: [String] -> WordsConfig -> IO ()
+handleWordsReq (t:w:_) cfg = do
   case t of
     "synonyms" -> do
-      res <- runWordle (getSynonyms w) cfg
+      res <- runWords (getSynonyms w) cfg
       putStrLn $ maybe "No synonyms found" unwords res
     _ -> putStrLn $ "unrecognized request: " ++ t
 
-getSynonyms :: Word -> Wordle [Word]
+getSynonyms :: Word -> Words [Word]
 getSynonyms w = do
   json <- getJSONEndpoint w "synonyms"
   let res = decode json :: Maybe Synonyms
@@ -83,7 +83,7 @@ tryGetWith opts url = do
     Left _ -> return Nothing
     Right res -> return (Just res)
 
-getJSON :: URL -> Wordle C.ByteString
+getJSON :: URL -> Words C.ByteString
 getJSON url = do
   token <- asks accessToken
   let opts = defaults & param "accessToken" .~ [T.pack token]
@@ -91,4 +91,4 @@ getJSON url = do
   r <- liftIO $ tryGetWith opts url
   maybe mzero (return . (^. responseBody)) r
 
-getJSONEndpoint :: Word -> String -> Wordle C.ByteString
+getJSONEndpoint :: Word -> String -> Words C.ByteString
