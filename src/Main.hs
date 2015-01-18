@@ -16,7 +16,6 @@ import           Data.Aeson
 import           Data.ByteString.Lazy.Char8 (ByteString)
 import           Data.Char                  (toLower, toUpper)
 import           Data.List                  (intercalate)
-import           Data.Maybe                 (maybe)
 import           Data.Maybe                 (listToMaybe)
 import           Data.Text                  (pack)
 import           Network.Wreq
@@ -141,7 +140,6 @@ getJSON :: URL -> WordsApp ByteString
 getJSON url = do
   token <- asks accessToken
   let opts = defaults & param "accessToken" .~ [pack token]
-  let handler _ = mzero
   liftM (^. responseBody) $ tryGetWith opts url
 
 getJSONEndpoint :: Word -> String -> WordsApp ByteString
